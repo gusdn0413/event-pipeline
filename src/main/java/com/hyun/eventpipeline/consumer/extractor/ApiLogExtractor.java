@@ -18,6 +18,7 @@ public class ApiLogExtractor {
 
     private final ObjectMapper objectMapper;
 
+    // 메시지 브로커에서 수신한 JSON -> ApiLog 변환
     public ApiLog extract(String message) {
         JsonNode convertedMessage = convertToJsonNode(message);
 

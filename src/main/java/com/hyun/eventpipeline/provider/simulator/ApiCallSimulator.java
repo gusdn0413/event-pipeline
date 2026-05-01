@@ -1,5 +1,6 @@
 package com.hyun.eventpipeline.provider.simulator;
 
+import com.hyun.eventpipeline.provider.model.ApiCallMessageEvent;
 import com.hyun.eventpipeline.provider.config.EventProperties;
 import com.hyun.eventpipeline.provider.config.EventProperties.Weights;
 import com.hyun.eventpipeline.provider.model.ApiCall;
@@ -8,6 +9,7 @@ import com.hyun.eventpipeline.provider.model.Product;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
@@ -45,6 +47,7 @@ public class ApiCallSimulator {
 
     private final EventProperties eventProperties;
     private final ObjectMapper objectMapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     // API 호출 시뮬레이터 : 매 호출마다 50~1000ms 랜덤 대기 후 메시지 발행
     @Scheduled(fixedDelay = 1)
@@ -61,6 +64,9 @@ public class ApiCallSimulator {
             String errorCode = selectErrorCode(statusCode);
 
             String message = buildMessage(apiCall, userId, statusCode, errorCode, responseTime, LocalDateTime.now());
+
+            // 메시지 브로커 발행 (실제로는 NATS/Kafka 등 메세지 브로커로 교체)
+            eventPublisher.publishEvent(new ApiCallMessageEvent(message));
             log.info("[{}] published: {}", apiCall.getDescription(), message);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

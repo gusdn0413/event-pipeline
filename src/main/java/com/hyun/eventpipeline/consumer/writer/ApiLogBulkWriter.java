@@ -26,7 +26,7 @@ public class ApiLogBulkWriter {
     private final LinkedBlockingQueue<ApiLog> apiLogsBuffer = new LinkedBlockingQueue<>(CAPACITY);
     private final ApiLogMapper apiLogMapper;
 
-    // listener가 메시지 추출 후 호출. 버퍼 가득 차면 경고 로그 + 드롭
+    // listener가 메시지 추출 후 호출 (버퍼 가득 차면 경고 + 로그 드롭)
     public void accept(ApiLog apiLog) {
         if (!apiLogsBuffer.offer(apiLog)) {
             log.warn("buffer full (capacity={}), dropped 1 api log", CAPACITY);
