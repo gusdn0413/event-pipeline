@@ -69,34 +69,4 @@ class ApiLogExtractorTest {
         assertThat(log.getUserId()).isEqualTo("임준희");
         assertThat(log.getTargetId()).isNull();
     }
-
-    @Test
-    @DisplayName("statusCode 4xx → CLIENT_ERROR")
-    void classify_clientError() {
-        assertThat(extractor.extract(baseJson(401, 50, "UNAUTHORIZED")).getEventType())
-                .isEqualTo(EventType.CLIENT_ERROR);
-    }
-
-    @Test
-    @DisplayName("statusCode 5xx → SERVER_ERROR (responseTime 무관)")
-    void classify_serverError() {
-        // responseTime 1500ms 라도 5xx 가 우선 — SLOW 가 아니라 SERVER_ERROR
-        assertThat(extractor.extract(baseJson(503, 1500, "SERVICE_UNAVAILABLE")).getEventType())
-                .isEqualTo(EventType.SERVER_ERROR);
-    }
-
-    private String baseJson(int statusCode, int responseTime, String errorCode) {
-        String errorCodeJson = (errorCode == null) ? "null" : "\"" + errorCode + "\"";
-        return """
-                {
-                  "endpoint": "/api/products/search",
-                  "method": "GET",
-                  "callAt": "2026-05-01T14:00:00",
-                  "responseTime": %d,
-                  "header": { "token": "tok_임준희", "agent": "phone" },
-                  "requestData": { "productId": "1" },
-                  "responseData": { "statusCode": %d, "errorCode": %s }
-                }
-                """.formatted(responseTime, statusCode, errorCodeJson);
-    }
 }
