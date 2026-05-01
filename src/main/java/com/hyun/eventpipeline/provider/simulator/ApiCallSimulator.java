@@ -46,10 +46,12 @@ public class ApiCallSimulator {
     private final EventProperties eventProperties;
     private final ObjectMapper objectMapper;
 
-    // 일정 주기로 api를 호출하는 시뮬레이터
-    @Scheduled(fixedDelayString = "${event.generator.interval-ms}")
+    // API 호출 시뮬레이터 : 매 호출마다 50~1000ms 랜덤 대기 후 메시지 발행
+    @Scheduled(fixedDelay = 1)
     public void provide() {
         try {
+            Thread.sleep(ThreadLocalRandom.current().nextLong(50, 1001));
+
             ApiCall apiCall = pick(ApiCall.values());
             String userId = pick(USERS);
 
@@ -60,6 +62,8 @@ public class ApiCallSimulator {
 
             String message = buildMessage(apiCall, userId, statusCode, errorCode, responseTime, LocalDateTime.now());
             log.info("[{}] published: {}", apiCall.getDescription(), message);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
         } catch (Exception e) {
             log.error("api call failed", e);
         }
