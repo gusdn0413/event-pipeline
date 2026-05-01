@@ -11,10 +11,15 @@ spring:
       mode: always
       schema-locations: classpath:db/schema.sql
 
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
 event:
   generator:
     enabled: true
-    interval-ms: 2000
+    interval-ms: 500
     weights:
       success: 70
       client-error: 15
