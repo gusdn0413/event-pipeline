@@ -25,6 +25,7 @@ import java.util.concurrent.ThreadLocalRandom;
 public class ApiCallSimulator {
 
     private static final List<String> USERS = List.of("a", "b", "c", "d", "e");
+    private static final List<String> AGENTS = List.of("phone", "desktop");
     private static final List<Product> PRODUCTS = List.of(
             new Product("1", "mouse"),
             new Product("2", "keyboard"),
@@ -59,8 +60,13 @@ public class ApiCallSimulator {
     }
 
     private String buildMessage(ApiCall apiCall, String userId, int statusCode, String errorCode, int responseTime, LocalDateTime callAt) throws Exception {
+        Map<String, String> header = new LinkedHashMap<>();
+        header.put("agent", pick(AGENTS));
+        if (apiCall != ApiCall.AUTH_LOGIN) {
+            header.put("token", "tok_" + userId);
+        }
+
         Map<String, String> requestData = new LinkedHashMap<>();
-        requestData.put("userId", userId);
 
         Map<String, Object> responseData = new LinkedHashMap<>();
         responseData.put("statusCode", statusCode);
@@ -69,6 +75,7 @@ public class ApiCallSimulator {
         boolean success = errorCode == null;
 
         switch (apiCall) {
+            case AUTH_LOGIN -> requestData.put("userId", userId);
             case PRODUCT_SEARCH -> {
                 Product product = pick(PRODUCTS);
                 requestData.put("productId", product.getId());
@@ -82,8 +89,6 @@ public class ApiCallSimulator {
             }
             case ORDER_DELETE ->
                     requestData.put("orderId", String.valueOf(ThreadLocalRandom.current().nextInt(1, 10000)));
-            default -> {
-            }
         }
 
         Map<String, Object> message = new LinkedHashMap<>();
@@ -91,6 +96,7 @@ public class ApiCallSimulator {
         message.put("method", apiCall.getMethod().name());
         message.put("callAt", callAt.toString());
         message.put("responseTime", responseTime);
+        message.put("header", header);
         message.put("requestData", requestData);
         message.put("responseData", responseData);
 
