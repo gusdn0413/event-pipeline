@@ -4,7 +4,6 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.ToString;
-import org.springframework.http.HttpMethod;
 
 import java.time.LocalDateTime;
 
@@ -17,7 +16,7 @@ public class ApiLog {
     private String agent;
     private String targetId;
     private EventType eventType;
-    private HttpMethod httpMethod;
+    private String httpMethod;
     private String endpoint;
     private int statusCode;
     private int responseTime;

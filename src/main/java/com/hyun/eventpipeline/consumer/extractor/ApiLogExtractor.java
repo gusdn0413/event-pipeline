@@ -3,7 +3,6 @@ package com.hyun.eventpipeline.consumer.extractor;
 import com.hyun.eventpipeline.consumer.model.ApiLog;
 import com.hyun.eventpipeline.consumer.model.EventType;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpMethod;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -34,7 +33,7 @@ public class ApiLogExtractor {
                 .agent(getField(header, "agent"))
                 .targetId(getField(requestData, "productId"))
                 .eventType(classifyEventType(statusCode, responseTime))
-                .httpMethod(HttpMethod.valueOf(convertedMessage.get("method").asString()))
+                .httpMethod(convertedMessage.get("method").asString())
                 .endpoint(convertedMessage.get("endpoint").asString())
                 .statusCode(statusCode)
                 .responseTime(responseTime)
