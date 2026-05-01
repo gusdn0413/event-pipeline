@@ -1,4 +1,4 @@
-package com.hyun.eventpipeline.provider;
+package com.hyun.eventpipeline.provider.model;
 
 public enum CallResult {
     SUCCESS,
