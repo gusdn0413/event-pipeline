@@ -1,4 +1,4 @@
-package com.hyun.eventpipeline.provider.model;
+package com.hyun.eventpipeline.provider;
 
 import lombok.Getter;
 import org.springframework.http.HttpMethod;

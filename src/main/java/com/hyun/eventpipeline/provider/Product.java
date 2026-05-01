@@ -1,4 +1,4 @@
-package com.hyun.eventpipeline.provider.model;
+package com.hyun.eventpipeline.provider;
 
 import lombok.AllArgsConstructor;
 import lombok.Getter;
