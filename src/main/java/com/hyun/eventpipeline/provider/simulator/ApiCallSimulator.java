@@ -24,8 +24,13 @@ import java.util.concurrent.ThreadLocalRandom;
 @ConditionalOnProperty(prefix = "event.generator", name = "enabled", havingValue = "true", matchIfMissing = true)
 public class ApiCallSimulator {
 
+    // 사용자 목록
     private static final List<String> USERS = List.of("a", "b", "c", "d", "e");
+
+    // 디바이스 타입
     private static final List<String> AGENTS = List.of("phone", "desktop");
+
+    // 상품 목록
     private static final List<Product> PRODUCTS = List.of(
             new Product("1", "mouse"),
             new Product("2", "keyboard"),
@@ -41,6 +46,7 @@ public class ApiCallSimulator {
     private final EventProperties eventProperties;
     private final ObjectMapper objectMapper;
 
+    // 일정 주기로 api를 호출하는 시뮬레이터
     @Scheduled(fixedDelayString = "${event.generator.interval-ms}")
     public void provide() {
         try {
@@ -60,18 +66,24 @@ public class ApiCallSimulator {
     }
 
     private String buildMessage(ApiCall apiCall, String userId, int statusCode, String errorCode, int responseTime, LocalDateTime callAt) throws Exception {
+
+        // 헤더 값 세팅
         Map<String, String> header = new LinkedHashMap<>();
         header.put("agent", pick(AGENTS));
+
+        // 실제 API 호출 시 헤더의 token 에서 user_id 추출한다고 가정
         if (apiCall != ApiCall.AUTH_LOGIN) {
             header.put("token", "tok_" + userId);
         }
 
-        Map<String, String> requestData = new LinkedHashMap<>();
-
+        // 응답 값 세팅
         Map<String, Object> responseData = new LinkedHashMap<>();
+
         responseData.put("statusCode", statusCode);
         responseData.put("errorCode", errorCode);
 
+        // 요청 값 세팅
+        Map<String, String> requestData = new LinkedHashMap<>();
         boolean success = errorCode == null;
 
         switch (apiCall) {
@@ -91,6 +103,7 @@ public class ApiCallSimulator {
                     requestData.put("orderId", String.valueOf(ThreadLocalRandom.current().nextInt(1, 10000)));
         }
 
+        // 실제 컨슈머에 전송할 메세지 세팅
         Map<String, Object> message = new LinkedHashMap<>();
         message.put("endpoint", apiCall.getEndpoint());
         message.put("method", apiCall.getMethod().name());
@@ -103,6 +116,10 @@ public class ApiCallSimulator {
         return objectMapper.writeValueAsString(message);
     }
 
+    /**
+     * yml의 weights(예: 70/15/5/10) 비율대로 outcome을 가중치 랜덤으로 선택.
+     * 균등한 확률의 랜덤을 안 쓰는 이유는 실제 트래픽 분포가 성공에 치우쳐 있어서 — 비율을 yml에서 튜닝 가능하게 분리.
+     */
     private CallResult selectCallResult() {
         Weights w = eventProperties.getWeights();
         int total = w.getSuccess() + w.getClientError() + w.getServerError() + w.getSlow();
