@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.hyun.eventpipeline.consumer.mapper.ApiLogMapper">
+
+    <insert id="insertApiLogBulk">
+        INSERT INTO api_logs
+            (user_id, agent, target_id, event_type, http_method, endpoint,
+             status_code, response_time, error_code, call_at)
+        VALUES
+        <foreach collection="logs" item="log" separator=",">
+            (#{log.userId},
+             #{log.agent},
+             #{log.targetId},
+             #{log.eventType},
+             #{log.httpMethod},
+             #{log.endpoint},
+             #{log.statusCode},
+             #{log.responseTime},
+             #{log.errorCode},
+             #{log.callAt})
+        </foreach>
+    </insert>
+
+</mapper>
