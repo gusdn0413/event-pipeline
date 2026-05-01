@@ -48,4 +48,25 @@ class ApiLogExtractorTest {
         assertThat(log.getErrorCode()).isNull();
         assertThat(log.getCallAt()).isEqualTo(LocalDateTime.parse("2026-05-01T14:23:45.123"));
     }
+
+    @Test
+    @DisplayName("AUTH_LOGIN (token 없음) → requestData.userId 폴백")
+    void extract_authLoginFallsBackToRequestUserId() {
+        String json = """
+                {
+                  "endpoint": "/api/auth/login",
+                  "method": "POST",
+                  "callAt": "2026-05-01T10:00:00",
+                  "responseTime": 50,
+                  "header": { "agent": "desktop" },
+                  "requestData": { "userId": "임준희" },
+                  "responseData": { "statusCode": 200, "errorCode": null }
+                }
+                """;
+
+        ApiLog log = extractor.extract(json);
+
+        assertThat(log.getUserId()).isEqualTo("임준희");
+        assertThat(log.getTargetId()).isNull();
+    }
 }
