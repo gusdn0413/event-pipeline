@@ -27,7 +27,7 @@ import java.util.concurrent.ThreadLocalRandom;
 public class ApiCallSimulator {
 
     // 사용자 목록
-    private static final List<String> USERS = List.of("a", "b", "c", "d", "e");
+    private static final List<String> USERS = List.of("박현우", "이강현", "지수근", "손규정", "임준희");
 
     // 디바이스 타입
     private static final List<String> AGENTS = List.of("phone", "desktop");
