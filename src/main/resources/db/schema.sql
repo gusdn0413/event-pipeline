@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS api_logs (
     http_method       VARCHAR(10)  NOT NULL,
     endpoint          VARCHAR(255) NOT NULL,
     status_code       INT          NOT NULL,
-    response_time_ms  INT          NOT NULL,
+    response_time     INT          NOT NULL,
     error_code        VARCHAR(50),
     call_at           TIMESTAMP(3) NOT NULL,
     PRIMARY KEY (id, call_at)

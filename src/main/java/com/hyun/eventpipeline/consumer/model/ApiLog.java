@@ -20,7 +20,7 @@ public class ApiLog {
     private HttpMethod httpMethod;
     private String endpoint;
     private int statusCode;
-    private int responseTimeMs;
+    private int responseTime;
     private String errorCode;
     private LocalDateTime callAt;
 }
