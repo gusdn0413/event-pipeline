@@ -1,0 +1,22 @@
+spring:
+  application:
+    name: event-pipeline
+  datasource:
+    url: jdbc:postgresql://localhost:5432/eventdb
+    username: postgres
+    password: root1234
+    driver-class-name: org.postgresql.Driver
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/schema.sql
+
+event:
+  generator:
+    enabled: true
+    interval-ms: 2000
+    weights:
+      success: 70
+      client-error: 15
+      server-error: 5
+      slow: 10
