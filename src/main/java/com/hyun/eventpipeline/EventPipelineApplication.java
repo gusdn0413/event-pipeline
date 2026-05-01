@@ -1,6 +1,6 @@
 package com.hyun.eventpipeline;
 
-import com.hyun.eventpipeline.config.EventProperties;
+import com.hyun.eventpipeline.provider.config.EventProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
