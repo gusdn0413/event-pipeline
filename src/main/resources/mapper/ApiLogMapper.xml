@@ -6,7 +6,8 @@
     <insert id="insertApiLogBulk">
         INSERT INTO api_logs
             (user_id, agent, target_id, event_type, http_method, endpoint,
-             status_code, response_time, error_code, call_at)
+             status_code, response_time, error_code, call_at,
+             created_at, creator, modifier, modified_at)
         VALUES
         <foreach collection="logs" item="log" separator=",">
             (#{log.userId},
@@ -18,7 +19,8 @@
              #{log.statusCode},
              #{log.responseTime},
              #{log.errorCode},
-             #{log.callAt})
+             #{log.callAt},
+             NOW(), 'logConsumer', 'logConsumer', NOW())
         </foreach>
     </insert>
 

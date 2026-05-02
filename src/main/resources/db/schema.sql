@@ -12,6 +12,10 @@ CREATE TABLE IF NOT EXISTS api_logs (
     response_time     INT          NOT NULL,
     error_code        VARCHAR(50),
     call_at           TIMESTAMP(3) NOT NULL,
+    created_at        TIMESTAMP(3) NOT NULL,
+    creator           VARCHAR(50)  NOT NULL,
+    modifier          VARCHAR(50)  NOT NULL,
+    modified_at       TIMESTAMP(3) NOT NULL,
     PRIMARY KEY (id, call_at)
 );
 
