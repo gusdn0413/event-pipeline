@@ -42,7 +42,7 @@ public class ApiCallSimulator {
     );
 
     private static final int SUCCESS_STATUS = 200;
-    private static final List<Integer> CLIENT_STATUS = List.of(400, 401, 403, 404, 404);
+    private static final List<Integer> CLIENT_STATUS = List.of(400, 401, 403);
     private static final List<Integer> SERVER_STATUS = List.of(500, 500, 502, 503);
 
     private final EventProperties eventProperties;
