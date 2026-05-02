@@ -6,6 +6,8 @@ import com.hyun.eventpipeline.provider.config.EventProperties.Weights;
 import com.hyun.eventpipeline.provider.model.ApiCall;
 import com.hyun.eventpipeline.provider.model.CallResult;
 import com.hyun.eventpipeline.provider.model.Product;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
+import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -48,6 +50,7 @@ public class ApiCallSimulator {
     private final EventProperties eventProperties;
     private final ObjectMapper objectMapper;
     private final ApplicationEventPublisher eventPublisher;
+    private final CircuitBreaker brokerCircuitBreaker;
 
     // API 호출 시뮬레이터 : 매 호출마다 50~1000ms 랜덤 대기 후 메시지 발행
     @Scheduled(fixedDelay = 1)
@@ -66,8 +69,16 @@ public class ApiCallSimulator {
             String message = buildMessage(apiCall, userId, statusCode, errorCode, responseTime, LocalDateTime.now());
 
             // 메시지 브로커 발행 (실제로는 NATS/Kafka 등 메세지 브로커로 교체)
-            eventPublisher.publishEvent(new ApiCallMessageEvent(message));
-            log.info("[{}] published: {}", apiCall.getDescription(), message);
+            // Circuit Breaker로 감싸 브로커 장애 감지 시 일정 시간 OPEN 시켜 호출 차단
+            try {
+                brokerCircuitBreaker.executeRunnable(() ->
+                        eventPublisher.publishEvent(new ApiCallMessageEvent(message)));
+                log.info("[{}] published: {}", apiCall.getDescription(), message);
+            } catch (CallNotPermittedException e) {
+                log.warn("[{}] dropped — circuit OPEN", apiCall.getDescription());
+            } catch (Exception e) {
+                log.warn("[{}] publish failed: {}", apiCall.getDescription(), e.getMessage());
+            }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         } catch (Exception e) {
