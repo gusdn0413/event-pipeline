@@ -4,112 +4,106 @@ API 호출 로그를 수집·저장·분석하는 이벤트 파이프라인
 
 ---
 
-## Step 1. 이벤트 설계
+## Step 1. 이벤트 생성기
 
-### 이벤트 컨셉 — API 호출 로그
+실제 운영 환경의 API Gateway 액세스 로그를 시뮬레이션하여, 이벤트를 생성하는 스크립트
 
-웹 서비스의 API 게이트웨이/액세스 로그를 모사
+### 1. 설계 의도 및 목적
+단순 무작위 생성이 아닌, **실제 서비스에서 발생할 수 있는 트래픽 패턴**을 모사
+*   **다양한 API 엔드포인트**: 로그인, 조회, 주문, 삭제 등 상태 변화를 일으키는 핵심 비즈니스 로직 포함
+*   **현실적인 응답 분포**: 정상 응답(70%) 외에도 클라이언트 오류, 서버 장애, 타임아웃(Slow API) 상황을 가중치 기반으로 구성
 
-클라이언트 요청(request)과 서버 응답(response)을 한 쌍으로 보고, 호출 건마다 한 행 저장
+### 2. 이벤트 발생 로직
+*   **수행 방식**: `@Scheduled`를 이용해 50ms~1000ms 사이의 랜덤한 간격으로 이벤트를 발행
+*   **전달 구조**: `ApplicationEventPublisher`와 `@Async`를 활용한 비동기 Pub-Sub 모델 구현
 
-**본 프로젝트가 다루는 4개 API**
+### 3. 상태 코드 및 가중치 상세
+운영 환경의 톤을 맞추기 위해 `application.yml`의 가중치 설정
+
+| 유형 (Outcome) | 비율 | 지연 시간 | 비고 |
+| :--- | :---: | :--- | :--- |
+| **SUCCESS** | 70% | 10~300ms | HTTP 200 |
+| **CLIENT_ERROR** | 15% | 5~100ms | HTTP 400, 401, 403 균등 분포 |
+| **SERVER_ERROR** | 5% | 100~2000ms | HTTP 5xx (500 발생 빈도 50% 설정) |
+| **SLOW** | 10% | 1000~3000ms | HTTP 200, 응답시간만 1초 이상 |
+
+### 4. 데이터 스키마 (Message Format)
+이벤트는 분석의 편의를 위해 규격화된 JSON 형태로 발행
+```json
+{
+  "header": { "token": "tok_user123", "agent": "phone" },
+  "endpoint": "/api/products/search",
+  "method": "GET",
+  "callAt": "2026-05-01T14:23:45.123",
+  "responseTime": 87,
+  "requestData": { "productId": "3" },
+  "responseData": { "statusCode": 200, "errorCode": null, "keyword": "monitor" }
+}
+```
+
+### 5. API 목록
 
 | API | 설명 |
 |---|---|
-| `POST /api/auth/login` | 로그인 |
-| `GET /api/products/search` | 상품 검색 |
-| `POST /api/orders` | 주문 생성 |
-| `DELETE /api/orders/{orderId}` | 주문 삭제 |
-
-### 설계 이유
-
-**문제 인식**
-
-- 단순히 **성공/실패**로만 나누면 분석 가치 제한적
-- 실제 운영의 핵심 질문은 "**실패했다면 왜?**", "**성공했지만 느렸나?**" 쪽
-
-→ 이벤트 타입을 4가지로 분류
-
-| event_type | 의미                                        |
-|---|-------------------------------------------|
-| `SUCCESS` | 200 정상 응답                                 |
-| `CLIENT_ERROR` | 4xx 호출자 측 문제 (잘못된 파라미터 / 권한 없음 / 리소스 없음 등) |
-| `SERVER_ERROR` | 5xx 서버 측 장애                               |
-| `SLOW` | 200으로 성공했지만 응답시간이 임계치(1000ms)를 초과한 케이스    |
-
-**`SLOW`를 별도로 둔 이유**
-
-- 상태코드만으로는 **성능 문제**가 잡히지 않음
-- 200으로 성공했어도 응답시간이 길면 슬로우 쿼리/외부 의존 지연 같은 별개 원인
-
-→ 5xx 장애와 분리해서 추적
+| POST /api/auth/login | 로그인 |
+| GET /api/products/search | 상품 검색 |
+| POST /api/orders | 주문 생성 |
+| DELETE /api/orders/{orderId} | 주문 삭제 |
 
 ---
 
-## Step 2. 로그 저장
+## Step 2. 로그 저장 
 
-### 저장소 채택 사유 — PostgreSQL + TimescaleDB
+### 1. PostgreSQL + TimescaleDB 선택 이유 및 목적
+단순 RDBMS 적재가 아닌, **시계열 분석과 운영 자동화에 최적화된 저장소**를 채택
+*   **시계열 특화**: 하이퍼테이블 자동 파티셔닝과 시간 범위 쿼리 최적화로 대량 데이터에서도 일정한 성능 유지
+*   **운영 자동화**: SQL만으로 데이터 압축 및 보관 주기(Retention) 정책 자동 적용
 
-**요구사항**
+---
 
-- **시간대별 분석이 핵심** (시간 추이, 최근 N분 에러율 등)
-- 한 번 INSERT 후 거의 UPDATE 없는 단방향 흐름
+### 2. 데이터 구조 (Schema)
 
-→ 시계열 특화 저장소가 적합 → **PostgreSQL 확장 TimescaleDB 채택**
-
-**도입 효과**
-
-1. **기존 도구 그대로 사용** — JDBC, MyBatis, IntelliJ Database 등 Postgres 생태계 변경 없이 시계열 기능 추가
-2. **하이퍼테이블** — 시간 단위 자동 분할, 시간대별 쿼리는 해당 청크만 스캔
-3. **압축/리텐션 정책 SQL 한 줄** — 별도 운영 도구 없이 DB가 데이터 라이프사이클 관리
-
-**대안 비교**
-
-| 후보 | 단점 |
-|---|---|
-| 풀 시계열 DB (InfluxDB 등) | JDBC/SQL 생태계와 단절, 학습 비용 |
-| Postgres 직접 파티션 테이블 | 청크 자동화 X, 관리 복잡 |
-
-→ Postgres에 시계열 기능만 얹는 형태로 위 단점 회피
-
-### 스키마
-
-JSON request/response 통째 저장 X — 분석에 필요한 **메타데이터만 컬럼 분리**
-
+분석 효율을 위해 원본 JSON을 파싱하여 주요 메타데이터를 컬럼으로 분리 저장
 ```sql
 CREATE TABLE api_logs (
     id                BIGSERIAL    NOT NULL,
-    user_id           VARCHAR(64)  NOT NULL,    -- 호출자 (header.token에서 디코딩)
-    agent             VARCHAR(20),              -- phone | desktop
-    target_id         VARCHAR(64),              -- requestData.productId (있을 때만)
-    event_type        VARCHAR(20)  NOT NULL,    -- SUCCESS / CLIENT_ERROR / SERVER_ERROR / SLOW
-    http_method       VARCHAR(10)  NOT NULL,    -- GET / POST / DELETE
-    endpoint          VARCHAR(255) NOT NULL,    -- /api/orders/{orderId} 같은 template path
+    user_id           VARCHAR(64)  NOT NULL,    -- header.token에서 추출
+    agent             VARCHAR(20),              -- 기기 유형 (phone, desktop 등)
+    target_id         VARCHAR(64),              -- 비즈니스 대상 ID (productId 등)
+    event_type        VARCHAR(20)  NOT NULL,    -- SUCCESS, SERVER_ERROR 등
+    http_method       VARCHAR(10)  NOT NULL,    -- GET, POST, DELETE 등
+    endpoint          VARCHAR(255) NOT NULL,    -- API 경로
     status_code       INT          NOT NULL,
     response_time     INT          NOT NULL,    -- ms 단위
-    error_code        VARCHAR(50),              -- 4xx/5xx 시 의미 코드 (NOT_FOUND, INTERNAL_ERROR 등)
-    call_at           TIMESTAMP(3) NOT NULL,    -- 호출 발생 시각
-    PRIMARY KEY (id, call_at)                   -- 하이퍼테이블 요건상 파티션 키(call_at) 포함
+    error_code        VARCHAR(50),              -- 상세 에러 코드
+    call_at           TIMESTAMP(3) NOT NULL,    -- 이벤트 발생 시각 (Partition Key)
+    PRIMARY KEY (id, call_at)
 );
 ```
 
-### 시계열 정책
+---
 
-| 정책 | 설정 | 효과 |
+### 3. 데이터 관리 정책
+
+TimescaleDB 네이티브 기능을 활용해 로그 라이프사이클을 자동화
+
+| 정책 | 설정 | 기대 효과 |
 |---|---|---|
-| **청크 분할** | 7일 단위 | 시간대 쿼리 시 해당 청크만 스캔 (전체 테이블 X) |
-| **압축** | 7일 경과 후 자동 | 오래된 청크 부피 ↓ |
-| **리텐션** | 30일 후 자동 삭제 | 무한 누적 방지 (별도 cron X) |
+| **청크 분할** | 7일 단위 | 시간 범위 조회 시 불필요한 데이터 스캔 방지 |
+| **압축(Compression)** | 7일 경과 시 | 스토리지 사용량 절감 및 과거 데이터 조회 최적화 |
+| **보관(Retention)** | 30일 후 자동 삭제 | 기간 만료 데이터 자동 삭제로 디스크 풀 방지 |
 
 ```sql
-SELECT create_hypertable('api_logs', 'call_at',
-    chunk_time_interval => INTERVAL '7 days');
+-- 1. 하이퍼테이블 변환 (시간 기반 파티셔닝)
+SELECT create_hypertable('api_logs', 'call_at', chunk_time_interval => INTERVAL '7 days');
 
+-- 2. 압축 정책: event_type별 그룹화로 압축률 향상
 ALTER TABLE api_logs SET (
     timescaledb.compress,
     timescaledb.compress_segmentby = 'event_type'
 );
-
 SELECT add_compression_policy('api_logs', INTERVAL '7 days');
+
+-- 3. 리텐션 정책: 30일 경과 데이터 자동 삭제
 SELECT add_retention_policy('api_logs', INTERVAL '30 days');
 ```
