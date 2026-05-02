@@ -7,6 +7,7 @@ import com.hyun.eventpipeline.provider.model.ApiCallMessageEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 
 @Slf4j
@@ -18,6 +19,7 @@ public class ApiLogMessageListener {
     private final ApiLogBulkWriter writer;
 
     // 메시지 브로커 구독 자리 (production에선 NATS/Kafka subscriber로 교체)
+    @Async
     @EventListener
     public void onMessage(ApiCallMessageEvent event) {
         ApiLog apiLog = extractor.extract(event.message());
