@@ -7,7 +7,7 @@
         INSERT INTO api_logs
             (user_id, agent, target_id, event_type, http_method, endpoint,
              status_code, response_time, error_code, call_at,
-             created_at, creator, modifier, modified_at)
+             creator, created_at, modifier, modified_at)
         VALUES
         <foreach collection="logs" item="log" separator=",">
             (#{log.userId},
@@ -20,7 +20,7 @@
              #{log.responseTime},
              #{log.errorCode},
              #{log.callAt},
-             NOW(), 'logConsumer', 'logConsumer', NOW())
+             'logConsumer', NOW(), 'logConsumer', NOW())
         </foreach>
     </insert>
 
