@@ -58,12 +58,11 @@ API 호출 로그를 수집·저장·분석하는 이벤트 파이프라인
 단순 RDBMS 적재가 아닌, **시계열 분석과 운영 자동화에 최적화된 저장소**를 채택
 *   **시계열 특화**: 하이퍼테이블 자동 파티셔닝과 시간 범위 쿼리 최적화로 대량 데이터에서도 일정한 성능 유지
 *   **운영 자동화**: SQL만으로 데이터 압축 및 보관 주기(Retention) 정책 자동 적용
-
-
+*   **생태계 호환**: PostgreSQL 확장이라 JDBC/MyBatis 등 기존 도구를 그대로 사용 (시계열 전용 DB로 갈 때의 학습 비용 회피)
 
 ### 2. 데이터 구조 (Schema)
 
-분석 효율을 위해 원본 JSON을 파싱하여 주요 메타데이터를 컬럼으로 분리 저장
+원본 JSON을 파싱하여 주요 메타데이터를 컬럼으로 분리 저장
 ```sql
 CREATE TABLE api_logs (
     id                BIGSERIAL    NOT NULL,
@@ -76,16 +75,18 @@ CREATE TABLE api_logs (
     status_code       INT          NOT NULL,
     response_time     INT          NOT NULL,    -- ms 단위
     error_code        VARCHAR(50),              -- 상세 에러 코드
-    call_at           TIMESTAMP(3) NOT NULL,    -- 이벤트 발생 시각 (Partition Key)
+    call_at           TIMESTAMP(0) NOT NULL,    -- 이벤트 발생 시각 (Partition Key)
+    creator           VARCHAR(50)  NOT NULL,    -- 생성자 (logConsumer 고정)
+    created_at        TIMESTAMP(0) NOT NULL,    -- 적재 시각
+    modifier          VARCHAR(50)  NOT NULL,    -- 수정자
+    modified_at       TIMESTAMP(0) NOT NULL,    -- 수정 시각
     PRIMARY KEY (id, call_at)
 );
 ```
 
-
-
 ### 3. 데이터 관리 정책
 
-TimescaleDB 네이티브 기능을 활용해 로그 라이프사이클을 자동화
+TimescaleDB 네이티브 기능을 활용해 로그 라이프사이클 자동화
 
 | 정책 | 설정 | 기대 효과 |
 |---|---|---|
