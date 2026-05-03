@@ -35,7 +35,7 @@ docker-compose up -d --build
 
 ### 2. 이벤트 발생 로직
 *   **수행 방식**: `@Scheduled`를 이용해 50ms~1000ms 사이의 랜덤한 간격으로 이벤트를 발행
-*   **전달 구조**: `ApplicationEventPublisher`와 `@Async`를 활용한 비동기 Pub-Sub 모델 구현
+*   **전달 구조**: `MessagePublisher` 인터페이스를 두고 **NATS / Spring ApplicationEvent** 두 구현체를 `messaging.broker` 프로퍼티로 스위칭. 기본은 NATS 모드
 
 ### 3. 상태 코드 및 가중치 상세
 운영 환경의 톤을 맞추기 위해 `application.yml`의 가중치 설정
@@ -142,15 +142,19 @@ SELECT add_retention_policy('api_logs', INTERVAL '30 days');
 *   `application.yml`의 weights로 **70/15/5/10** 비율을 설정해 성공이 압도적이도록 조정
 *   5xx 안에서도 균등이 아니라 `List.of(500, 500, 502, 503)`로 500을 50%로 가중 (실제 운영의 흔한 5xx 대부분이 DB 장애·타임아웃 등으로 500에 몰린다는 점 반영)
 
-### 2. 메시지 브로커 흐름을 흉내낸 Pub/Sub
-실제 운영이라면 NATS/Kafka 같은 브로커가 들어갈 자리지만, 과제 단계이기에 Spring `ApplicationEvent`로 대체
-*   provider(simulator)와 consumer(listener)를 **수평 분리**해 서로 직접 의존하지 않도록 구성
-*   `@Async` 리스너로 발행/구독 스레드를 나눠 발행자가 구독자의 처리 시간에 영향받지 않도록 함
+### 2. 메시지 브로커 추상화 (NATS / Spring Event 스위칭)
+초기엔 Spring `ApplicationEvent`로 in-process Pub/Sub을 구성했으나 "브로커 자리를 모사한다"는 의도가 실제 운영과 거리감을 남김. 그래서 **경량 브로커인 NATS를 추가하면서 두 구현을 모두 살려두고 `messaging.broker` 프로퍼티로 스위칭** 가능하게 추상화
+*   **`MessagePublisher` 인터페이스**: `ApiCallSimulator`는 인터페이스에만 의존하고, 구현체(`NatsMessagePublisher` / `SpringEventMessagePublisher`)는 `@ConditionalOnProperty`로 한쪽만 활성화 → subscriber도 동일한 방식
+*   **NATS 모드 (기본)**: 진짜 브로커를 거쳐 통신해 in-process 의존이 사라짐. 추후 모듈을 별도 프로세스/컨테이너로 떼어낼 때 코드 변경 없이 그대로 동작
+    *   `Dispatcher` 스레드가 발행/구독을 자연스럽게 분리해 publisher가 subscriber 처리 시간에 영향받지 않음
+    *   Kafka 대비 운영 부담(Zookeeper/클러스터)이 거의 없고 단일 바이너리로 동작 — 영속성이 필요해지면 JetStream으로 점진 확장 가능
+*   **Spring Event 모드**: NATS 서버 없이 단일 JVM만으로 전체 파이프라인을 돌릴 수 있어 로컬 디버깅·통합테스트에 유리. `@Async` 리스너로 발행/구독 스레드를 분리
 
 ### 3. 장애 전파 방지 (Circuit Breaker)
-NATS/Kafka 등 메세지 브로커 장애 시 의미 없는 publish를 계속 던질 수 있음
+NATS 등 메시지 브로커 장애 시 의미 없는 publish를 계속 던질 수 있음
 *   Resilience4j로 publish 호출을 감싸 **5회 연속 실패 → OPEN(10초) → HALF_OPEN → 성공 시 CLOSED 복귀**
 *   OPEN 상태에선 호출이 차단돼 장애 중 무의미한 시도가 쌓이지 않음
+*   **NATS publish 특성 보정**: jnats는 disconnect 상태에서도 publish가 내부 버퍼에 쌓이기만 해 호출이 즉시 성공으로 보임. 이대로 두면 서킷브레이커가 절대 동작하지 않으므로, publish 직전에 `Connection.Status`를 직접 체크해 `CONNECTED`가 아니면 예외로 던지도록 처리 — 이때부터 서킷이 정상적으로 카운트
 
 ### 4. 확장성 고려 — 사전 집계 뷰 (Continuous Aggregate)
 데이터가 누적되면 24시간 윈도우 쿼리도 비용이 커지는데, TimescaleDB의 Continuous Aggregate로 하루 단위 사전 집계 뷰를 만들어두면 대시보드 응답이 훨씬 빨라짐
