@@ -2,6 +2,7 @@ package com.hyun.eventpipeline.consumer.subscriber;
 
 import com.hyun.eventpipeline.consumer.extractor.ApiLogExtractor;
 import com.hyun.eventpipeline.consumer.model.ApiLog;
+import com.hyun.eventpipeline.consumer.ack.Acknowledgment;
 import com.hyun.eventpipeline.consumer.writer.ApiLogBulkWriter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,7 +26,8 @@ public class SpringEventApiLogSubscriber {
         try {
             ApiLog apiLog = extractor.extract(message);
             if (apiLog == null) return;
-            writer.accept(apiLog);
+            // in-process 전달이라 재배달 개념이 없으므로 NOOP
+            writer.accept(apiLog, Acknowledgment.NOOP);
         } catch (Exception e) {
             log.warn("message handling failed: {}", e.getMessage());
         }
