@@ -1,0 +1,55 @@
+# Grafana 시각화 대시보드
+# Deployment + Service + PVC 마운트
+# 대시보드 설정은 grafana-pvc.yaml의 PVC에 영속 저장
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana-service
+spec:
+  type: LoadBalancer            # 외부에서 대시보드 접근
+  selector:
+    app: grafana
+  ports:
+    - port: 80                  # 외부 노출 포트
+      targetPort: 3000          # Grafana 기본 포트
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: grafana
+spec:
+  replicas: 1                   # PVC가 ReadWriteOnce라 1대만 가능
+  selector:
+    matchLabels:
+      app: grafana
+  template:
+    metadata:
+      labels:
+        app: grafana
+    spec:
+      containers:
+        - name: grafana
+          image: grafana/grafana:latest
+          ports:
+            - containerPort: 3000
+          volumeMounts:
+            - name: grafana-data
+              mountPath: /var/lib/grafana   # Grafana 데이터 디렉토리
+          # 대시보드 로딩 가능 상태 확인
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+      volumes:
+        - name: grafana-data
+          persistentVolumeClaim:
+            claimName: grafana-data         # grafana-pvc.yaml에서 만든 PVC 참조

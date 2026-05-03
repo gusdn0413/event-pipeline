@@ -6,7 +6,9 @@ metadata:
 
 data:
   NATS_URL: "nats://nats-service:4222"
-  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres-service:5432/eventdb"
+  # DB는 K8s 밖 외부 호스트(예: AWS EC2의 TimescaleDB)로 가정
+  # 실제 배포 시 host 부분을 환경별 DB 주소로 교체
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://EXTERNAL_DB_HOST:5432/eventdb"
   SPRING_DATASOURCE_USERNAME: "postgres"
   MESSAGING_BROKER: "nats"
   TZ: "Asia/Seoul"
