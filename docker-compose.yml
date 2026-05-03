@@ -46,5 +46,20 @@ services:
     ports:
       - "8080:8080"
 
+  grafana:
+    image: grafana/grafana:latest
+    container_name: event-grafana
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      TZ: Asia/Seoul
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+
 volumes:
   postgres-data:
+  grafana-data:
