@@ -1,0 +1,87 @@
+# Prometheus 메트릭 수집 서버
+# Deployment + Service + ConfigMap (prometheus.yml 설정)
+# Grafana가 데이터소스로 연결해 시계열 메트릭 시각화
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-config
+data:
+  prometheus.yml: |
+    global:
+      scrape_interval: 15s        # 15초마다 메트릭 pull
+
+    scrape_configs:
+      # event-pipeline 앱의 Spring Boot actuator endpoint를 scrape
+      - job_name: 'event-pipeline-app'
+        metrics_path: /actuator/prometheus
+        static_configs:
+          - targets: ['app-service:8080']
+
+      # NATS 자체 메트릭 (모니터링 포트)
+      - job_name: 'nats'
+        metrics_path: /varz
+        static_configs:
+          - targets: ['nats-service:8222']
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: prometheus-service
+spec:
+  type: ClusterIP                  # 클러스터 내부에서만 접근 (Grafana가 사용)
+  selector:
+    app: prometheus
+  ports:
+    - port: 9090
+      targetPort: 9090
+---
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prometheus
+spec:
+  replicas: 1                      # PVC가 ReadWriteOnce라 1대만
+  selector:
+    matchLabels:
+      app: prometheus
+  template:
+    metadata:
+      labels:
+        app: prometheus
+    spec:
+      containers:
+        - name: prometheus
+          image: prom/prometheus:latest
+          args:
+            - --config.file=/etc/prometheus/prometheus.yml
+            - --storage.tsdb.path=/prometheus
+            - --storage.tsdb.retention.time=14d
+          ports:
+            - containerPort: 9090
+          volumeMounts:
+            - name: prometheus-config
+              mountPath: /etc/prometheus
+            - name: prometheus-data
+              mountPath: /prometheus
+          readinessProbe:
+            httpGet:
+              path: /-/ready
+              port: 9090
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /-/healthy
+              port: 9090
+            initialDelaySeconds: 30
+            periodSeconds: 10
+      volumes:
+        - name: prometheus-config
+          configMap:
+            name: prometheus-config
+        - name: prometheus-data
+          persistentVolumeClaim:
+            claimName: prometheus-data

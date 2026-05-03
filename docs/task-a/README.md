@@ -13,6 +13,8 @@
 | [`app.yaml`](app.yaml) | Deployment + Service | 이벤트 생성기 앱 (replicas 3) |
 | [`grafana.yaml`](grafana.yaml) | Deployment + Service | Grafana 시각화 대시보드 |
 | [`grafana-pvc.yaml`](grafana-pvc.yaml) | PersistentVolumeClaim | Grafana 대시보드·사용자 설정 영구 저장 |
+| [`prometheus.yaml`](prometheus.yaml) | Deployment + Service + ConfigMap | Prometheus 메트릭 수집 서버 |
+| [`prometheus-pvc.yaml`](prometheus-pvc.yaml) | PersistentVolumeClaim | Prometheus 시계열 메트릭 영구 저장 (14일 보관) |
 
 ## 2. 매니페스트별 역할 및 선택 이유
 
@@ -45,3 +47,12 @@
     *   **Deployment (replicas 1)**: PVC가 ReadWriteOnce라 1대만 운영 가능. 시각화는 1대로 충분
     *   **PVC**: 대시보드 설정·사용자 정보·플러그인 등을 저장. 컨테이너 재시작 시에도 설정 유지
     *   **LoadBalancer Service**: 사용자가 외부에서 대시보드에 접속해야 하므로 외부 노출 (EKS면 ALB로 자동 매핑)
+
+### `prometheus.yaml` + `prometheus-pvc.yaml` (Deployment + Service + ConfigMap + PVC)
+*   **역할**: 시스템·앱 메트릭(JVM·요청량·NATS 메시지 처리량 등)을 시계열로 수집·저장하는 Prometheus 서버
+*   **선택 이유**:
+    *   **Deployment (replicas 1)**: PVC가 ReadWriteOnce라 1대만 운영. 단일 노드로 충분
+    *   **ConfigMap**: `prometheus.yml` 설정 파일을 Pod에 마운트. 어떤 endpoint를 어느 주기로 scrape할지 명시
+    *   **PVC**: 시계열 메트릭 영구 저장. 보관 기간(14일)을 인자로 지정해 디스크 사용량 통제
+    *   **ClusterIP Service**: Grafana가 클러스터 내부에서 데이터소스로만 연결하면 되므로 외부 노출 불필요
+    *   **관제 축 분리**: 비즈니스 로그는 PostgreSQL → Grafana, 시스템 메트릭은 Prometheus → Grafana로 두 축을 분리해 통합 관제
