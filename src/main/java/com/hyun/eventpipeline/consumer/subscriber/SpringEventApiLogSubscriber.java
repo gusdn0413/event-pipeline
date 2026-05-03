@@ -19,11 +19,6 @@ public class SpringEventApiLogSubscriber {
     private final ApiLogExtractor extractor;
     private final ApiLogBulkWriter writer;
 
-    /**
-     * String을 publishEvent하면 Spring이 PayloadApplicationEvent<String>으로 wrap하고,
-     * 여기선 페이로드 타입(String)을 그대로 받으면 자동 언래핑.
-     * @Async로 발행/구독 스레드 분리 — publisher가 listener의 처리 시간에 영향받지 않음.
-     */
     @Async
     @EventListener
     public void onMessage(String message) {
