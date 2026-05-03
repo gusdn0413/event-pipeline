@@ -35,7 +35,8 @@ docker-compose up -d --build
 
 ### 2. 이벤트 발생 로직
 *   **수행 방식**: `@Scheduled`를 이용해 50ms~1000ms 사이의 랜덤한 간격으로 이벤트를 발행
-*   **전달 구조**: `MessagePublisher` 인터페이스를 두고 **NATS / Spring ApplicationEvent** 두 구현체를 `messaging.broker` 프로퍼티로 스위칭
+*   **전달 구조**: `MessagePublisher` 인터페이스를 두고 **NATS JetStream / Spring ApplicationEvent** 두 구현체를 `messaging.broker` 프로퍼티로 스위칭
+*   **유실 방지**: NATS는 JetStream(File storage, WorkQueuePolicy)으로 메시지 영속화 + Subscriber는 DB write 성공 후 ack 호출 → 브로커·앱 어느 쪽이 죽어도 처리 안 된 메시지는 살아남음
 
 ### 3. 상태 코드 및 가중치 상세
 운영 환경의 톤을 맞추기 위해 `application.yml`의 가중치 설정
@@ -149,13 +150,21 @@ SELECT add_retention_policy('api_logs', INTERVAL '30 days');
 
 *   **Dispatcher 스레드 분리**: NATS Dispatcher가 발행/구독을 다른 스레드에서 처리해 publisher가 subscriber 처리 시간에 영향받지 않음
 
-### 3. 장애 전파 방지 (Circuit Breaker)
+### 3. 메시지 유실 방지
+core NATS는 fire-and-forget이라 NATS 재시작·앱 크래시 시 in-flight 메시지가 그대로 사라짐. 로그성 데이터의 **신뢰 가능한 적재**는 파이프라인의 기본 요건이라 판단해 JetStream으로 전환
+
+*   **Stream 영속화**: File storage + `WorkQueuePolicy`. consumer가 ack한 메시지는 즉시 삭제되어 디스크 사용량 = consumer lag으로 운영 가시성 좋음
+*   **MaxAge 1시간**: 30일 장기 보관은 TimescaleDB가 담당. NATS는 DB 일시 장애 흡수용 짧은 버퍼 역할만 수행
+*   **DB write 후 ack**: 단순히 메시지 받자마자 ack 하면 `ApiLogBulkWriter` 메모리 큐에 쌓인 분량이 앱 크래시 시 유실. `Acknowledgment` 추상화를 도입해 bulk INSERT 성공 후 batch 단위로 일괄 ack, 실패 시 nak로 redeliver 처리
+*   **AckWait 30초 / MaxDeliver 5회**: bulk flush(1초) + DB write 여유. poison message가 무한 재배달되지 않도록 상한 설정
+
+### 4. 장애 전파 방지 (Circuit Breaker)
 NATS 등 메시지 브로커 장애 시 의미 없는 publish가 누적될 우려 존재
 *   Resilience4j로 publish 호출을 감싸 **5회 연속 실패 → OPEN(10초) → HALF_OPEN → 성공 시 CLOSED 복귀**
 *   OPEN 상태에선 호출이 차단돼 장애 중 무의미한 시도 차단
-*   **NATS publish 특성 보정**: jnats는 disconnect 상태에서도 publish가 내부 버퍼에 쌓이기만 해 호출이 즉시 성공처럼 관측. 이대로 두면 서킷브레이커 작동 불가하므로, publish 직전에 `Connection.Status`를 직접 체크해 `CONNECTED`가 아니면 예외로 던지도록 처리 — 이때부터 서킷이 정상 카운트
+*   JetStream `publish()`는 PublishAck를 동기 대기하므로 disconnect/타임아웃 시 자연스럽게 예외가 발생 — core NATS 시절 `Connection.Status` 수동 체크 워크어라운드는 불필요해져 제거
 
-### 4. 확장성 고려 — 사전 집계 뷰 (Continuous Aggregate)
+### 5. 확장성 고려 — 사전 집계 뷰 (Continuous Aggregate)
 데이터가 누적되면 24시간 윈도우 쿼리도 비용이 커지는데, TimescaleDB의 Continuous Aggregate로 하루 단위 사전 집계 뷰를 만들어두면 대시보드 응답 속도 개선 가능
 *   다만 효과 검증을 위해선 데이터를 장시간 누적해야 하는데 시뮬레이터를 그만큼 켜두기 어려워 적용 보류
 

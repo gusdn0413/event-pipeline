@@ -6,6 +6,10 @@ metadata:
 
 data:
   NATS_URL: "nats://nats-service:4222"
+  # JetStream stream/consumer 이름은 환경별 분리 가능성이 있어 ConfigMap으로 노출
+  # (예: 스테이징은 EVENTS_STG로 분리해 운영 데이터와 격리)
+  NATS_JETSTREAM_STREAM: "EVENTS"
+  NATS_JETSTREAM_CONSUMER: "api-log-consumer"
   # DB는 K8s 밖 외부 호스트(예: AWS EC2의 TimescaleDB)로 가정
   # 실제 배포 시 host 부분을 환경별 DB 주소로 교체
   SPRING_DATASOURCE_URL: "jdbc:postgresql://EXTERNAL_DB_HOST:5432/eventdb"

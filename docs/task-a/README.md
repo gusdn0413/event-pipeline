@@ -9,7 +9,7 @@
 |---|---|---|
 | [`configmap.yaml`](configmap.yaml) | ConfigMap | 앱 환경 설정 (NATS_URL, 외부 DB 주소 등) |
 | [`secret.yaml`](secret.yaml) | Secret | DB password |
-| [`nats.yaml`](nats.yaml) | Deployment + Service | NATS 브로커 |
+| [`nats.yaml`](nats.yaml) | StatefulSet + Service + PVC | NATS 브로커 (JetStream 영속화 + prometheus-nats-exporter 사이드카) |
 | [`app.yaml`](app.yaml) | Deployment + Service | 이벤트 생성기 앱 (replicas 3) |
 | [`grafana.yaml`](grafana.yaml) | Deployment + Service | Grafana 시각화 대시보드 |
 | [`grafana-pvc.yaml`](grafana-pvc.yaml) | PersistentVolumeClaim | Grafana 대시보드·사용자 설정 영구 저장 |
@@ -19,18 +19,21 @@
 ## 2. 매니페스트별 역할 및 선택 이유
 
 ### `configmap.yaml`
-*   **역할**: 앱이 사용할 환경변수(NATS 주소, 외부 DB 주소, 브로커 모드 등)를 모아둔 ConfigMap
+*   **역할**: 앱이 사용할 환경변수(NATS 주소, JetStream stream/consumer 이름, 외부 DB 주소, 브로커 모드 등)를 모아둔 ConfigMap
 *   **선택 이유**: 환경별(개발, 스테이징, 운영)로 바뀌는 설정값을 코드와 분리. ConfigMap만 다른 값으로 갈아끼우면 코드를 다시 빌드하지 않아도 환경 전환이 가능
+*   **JetStream 항목 노출 범위**: stream/consumer 이름은 환경별 격리(예: `EVENTS_STG`)가 필요할 수 있어 ConfigMap에 노출. 반면 ack-wait·max-deliver 같은 튜닝값은 시스템 상수에 가까워 application.yml 기본값을 그대로 사용
 
 ### `secret.yaml`
 *   **역할**: DB 비밀번호를 담은 Secret
 *   **선택 이유**: 민감 정보를 ConfigMap과 분리해서 별도 접근 권한을 걸 수 있음. 비밀번호가 로그나 명령어 결과에 그대로 노출되는 것 방지
 
-### `nats.yaml` (Deployment + Service)
-*   **역할**: NATS 브로커 컨테이너 1대, 다른 컴포넌트가 접근할 수 있는 Service
+### `nats.yaml` (StatefulSet + Service + PVC + exporter 사이드카)
+*   **역할**: NATS 브로커 컨테이너 1대(JetStream 활성화), prometheus-nats-exporter 사이드카, 다른 컴포넌트가 접근할 Service, stream/consumer 영속화 디스크
 *   **선택 이유**:
-    *   **Deployment**: NATS는 메시지를 메모리에서만 처리해서 데이터를 보관할 디스크가 필요 없음. 그래서 일반 Deployment로 충분 (나중에 디스크 영속화가 필요해지면 StatefulSet으로 변경)
-    *   **Service**: 앱이 nats-service:4222 라는 이름으로 안정적으로 접속할 수 있도록 통로 역할
+    *   **StatefulSet**: JetStream stream과 consumer 진행상태가 디스크에 기록되므로 Pod 재시작 시에도 동일 PVC가 안정적으로 재연결되도록 StatefulSet 사용 (Deployment + PVC 조합은 Pod 이름이 바뀔 때 결합 보장이 약함)
+    *   **PVC (1Gi)**: WorkQueuePolicy + MaxAge 1시간 정책상 ack된 메시지는 즉시 삭제되므로 디스크 사용량은 consumer lag만큼만 누적. 1Gi로 충분
+    *   **Service**: 앱은 4222(client), Prometheus는 7777(metrics), 헬스체크는 8222(monitoring)로 포트별 역할 분리
+    *   **exporter 사이드카**: NATS의 `/varz`·`/jsz`(JSON)를 `prometheus-nats-exporter`가 `/metrics`로 재노출 → consumer lag·ack 처리량을 Grafana로 시각화. 사이드카로 NATS Pod와 라이프사이클 동기화
 
 ### `app.yaml` (Deployment + Service)
 *   **역할**: 이벤트 생성기 앱 컨테이너 3대, 클러스터 내부에서 접근할 Service
@@ -49,10 +52,11 @@
     *   **LoadBalancer Service**: 사용자가 외부에서 대시보드에 접속해야 하므로 외부 노출 (EKS면 ALB로 자동 매핑)
 
 ### `prometheus.yaml` + `prometheus-pvc.yaml` (Deployment + Service + ConfigMap + PVC)
-*   **역할**: 시스템·앱 메트릭(JVM·요청량·NATS 메시지 처리량 등)을 시계열로 수집·저장하는 Prometheus 서버
+*   **역할**: 시스템·앱·메시지 브로커 메트릭(JVM·요청량·JetStream consumer lag·ack 처리량 등)을 시계열로 수집·저장하는 Prometheus 서버
 *   **선택 이유**:
     *   **Deployment (replicas 1)**: PVC가 ReadWriteOnce라 1대만 운영. 단일 노드로 충분
     *   **ConfigMap**: `prometheus.yml` 설정 파일을 Pod에 마운트. 어떤 endpoint를 어느 주기로 scrape할지 명시
     *   **PVC**: 시계열 메트릭 영구 저장. 보관 기간(14일)을 인자로 지정해 디스크 사용량 통제
     *   **ClusterIP Service**: Grafana가 클러스터 내부에서 데이터소스로만 연결하면 되므로 외부 노출 불필요
-    *   **관제 축 분리**: 비즈니스 로그는 PostgreSQL → Grafana, 시스템 메트릭은 Prometheus → Grafana로 두 축을 분리해 통합 관제
+    *   **scrape job 2개**: `app-service:8080/actuator/prometheus`(앱 JVM·요청 메트릭) + `nats-service:7777/metrics`(exporter 사이드카가 노출하는 NATS·JetStream 메트릭)
+    *   **관제 축 분리**: 비즈니스 로그는 PostgreSQL → Grafana, 시스템·브로커 메트릭은 Prometheus → Grafana로 두 축을 분리해 통합 관제

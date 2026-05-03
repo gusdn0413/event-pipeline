@@ -18,11 +18,12 @@ data:
         static_configs:
           - targets: ['app-service:8080']
 
-      # NATS 자체 메트릭 (모니터링 포트)
+      # NATS + JetStream 메트릭
+      # nats-server의 /varz·/jsz는 JSON이라 Prometheus가 직접 못 읽음 → exporter 사이드카가 /metrics로 재노출
       - job_name: 'nats'
-        metrics_path: /varz
+        metrics_path: /metrics
         static_configs:
-          - targets: ['nats-service:8222']
+          - targets: ['nats-service:7777']
 ---
 
 apiVersion: v1

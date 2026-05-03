@@ -1,5 +1,6 @@
-# NATS 메시지 브로커
-# Deployment + Service 조합
+# NATS 메시지 브로커 (JetStream 활성화) + prometheus-nats-exporter 사이드카
+# StatefulSet + Headless Service + PVC 조합
+# JetStream stream/consumer 진행상태가 디스크에 영속화되므로 StatefulSet 사용
 ---
 apiVersion: v1
 kind: Service
@@ -12,16 +13,21 @@ spec:
     - name: client
       port: 4222
       targetPort: 4222
-      # 헬스체크용
+      # NATS 자체 헬스체크/모니터링 JSON endpoint
     - name: monitoring
       port: 8222
       targetPort: 8222
+      # prometheus-nats-exporter가 /varz, /jsz 등을 Prometheus 포맷으로 재노출
+    - name: metrics
+      port: 7777
+      targetPort: 7777
 ---
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: nats
 spec:
+  serviceName: nats-service
   replicas: 1
   selector:
     matchLabels:
@@ -34,11 +40,14 @@ spec:
       containers:
         - name: nats
           image: nats:2-alpine
-          # 모니터링 포트 활성화 옵션
-          args: ["-m", "8222"]
+          # -js: JetStream 활성화, -sd: stream/consumer 영속화 디렉토리, -m: 모니터링 포트
+          args: ["-js", "-sd", "/data", "-m", "8222"]
           ports:
             - containerPort: 4222
             - containerPort: 8222
+          volumeMounts:
+            - name: nats-data
+              mountPath: /data
           # readiness: 트래픽 받을 준비 됐는지
           readinessProbe:
             httpGet:
@@ -53,3 +62,22 @@ spec:
               port: 8222
             initialDelaySeconds: 10
             periodSeconds: 10
+        # NATS의 JSON 모니터링 endpoint(/varz, /jsz)를 Prometheus 포맷(/metrics)으로 노출
+        # -jsz=all: JetStream account/stream/consumer 메트릭 모두 포함 (consumer lag, ack 처리량 등)
+        - name: nats-exporter
+          image: natsio/prometheus-nats-exporter:latest
+          args:
+            - "-port=7777"
+            - "-varz"
+            - "-jsz=all"
+            - "http://localhost:8222"
+          ports:
+            - containerPort: 7777
+  volumeClaimTemplates:
+    - metadata:
+        name: nats-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 1Gi

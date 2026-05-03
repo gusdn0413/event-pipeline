@@ -21,10 +21,13 @@ services:
   nats:
     image: nats:2-alpine
     container_name: event-nats
-    command: ["-m", "8222"]
+    # -js: JetStream 활성화, -sd: stream/consumer 영속화 디렉토리
+    command: ["-js", "-sd", "/data", "-m", "8222"]
     ports:
       - "4222:4222"
       - "8222:8222"
+    volumes:
+      - nats-data:/data
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz"]
       interval: 5s
@@ -63,3 +66,4 @@ services:
 volumes:
   postgres-data:
   grafana-data:
+  nats-data:
