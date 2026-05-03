@@ -18,14 +18,30 @@ services:
       timeout: 5s
       retries: 10
 
+  nats:
+    image: nats:2-alpine
+    container_name: event-nats
+    command: ["-m", "8222"]
+    ports:
+      - "4222:4222"
+      - "8222:8222"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8222/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   app:
     build: .
     container_name: event-app
     depends_on:
       postgres:
         condition: service_healthy
+      nats:
+        condition: service_healthy
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/eventdb
+      NATS_URL: nats://nats:4222
       TZ: Asia/Seoul
     ports:
       - "8080:8080"
