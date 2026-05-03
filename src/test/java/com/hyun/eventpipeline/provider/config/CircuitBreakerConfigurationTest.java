@@ -15,7 +15,7 @@ class CircuitBreakerConfigurationTest {
 
     @BeforeEach
     void setUp() {
-        cb = new CircuitBreakerConfiguration().brokerCircuitBreaker();
+        cb = new CircuitBreakerConfig().brokerCircuitBreaker();
     }
 
     @Test
