@@ -14,6 +14,12 @@ mybatis:
 nats:
   url: nats://localhost:4222
   subject: events.api.call.test
+  jetstream:
+    stream: EVENTS_TEST
+    consumer: api-log-consumer-test
+    max-age-seconds: 3600
+    ack-wait-seconds: 30
+    max-deliver: 5
 
 # 통합테스트는 publish 스케줄을 끄고 컨텍스트 로드만 검증
 event:

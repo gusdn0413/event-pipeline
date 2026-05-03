@@ -1,5 +1,6 @@
 package com.hyun.eventpipeline.consumer.writer;
 
+import com.hyun.eventpipeline.consumer.ack.Acknowledgment;
 import com.hyun.eventpipeline.consumer.mapper.ApiLogMapper;
 import com.hyun.eventpipeline.consumer.model.ApiLog;
 import com.hyun.eventpipeline.consumer.model.EventType;
@@ -13,7 +14,10 @@ import java.util.List;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 class ApiLogBulkWriterTest {
@@ -30,9 +34,9 @@ class ApiLogBulkWriterTest {
     @Test
     @DisplayName("accept 후 flush → 쌓인 건이 FIFO 순서대로 mapper 에 전달")
     void flush_insertsBufferedLogsInOrder() {
-        writer.accept(sampleLog("u1"));
-        writer.accept(sampleLog("u2"));
-        writer.accept(sampleLog("u3"));
+        writer.accept(sampleLog("u1"), Acknowledgment.NOOP);
+        writer.accept(sampleLog("u2"), Acknowledgment.NOOP);
+        writer.accept(sampleLog("u3"), Acknowledgment.NOOP);
 
         writer.flush();
 
@@ -48,7 +52,7 @@ class ApiLogBulkWriterTest {
     @Test
     @DisplayName("한 번의 flush 는 최대 BATCH_SIZE 건만 처리")
     void flush_respectsBatchSize() {
-        IntStream.rangeClosed(1, 15).forEach(i -> writer.accept(sampleLog("u" + i)));
+        IntStream.rangeClosed(1, 15).forEach(i -> writer.accept(sampleLog("u" + i), Acknowledgment.NOOP));
 
         writer.flush();
 
@@ -59,19 +63,48 @@ class ApiLogBulkWriterTest {
     }
 
     @Test
-    @DisplayName("capacity(500) 초과 accept → 예외 없이 drop")
-    void accept_overCapacity_dropsSilently() {
-        // 505건 넣고 모두 flush 했을 때 인서트된 총 건수가 500 인지 (5건 drop)
-        IntStream.rangeClosed(1, 505).forEach(i -> writer.accept(sampleLog("u" + i)));
+    @DisplayName("capacity(500) 초과 accept → 즉시 nak 호출 (JetStream redeliver 유도)")
+    void accept_overCapacity_naks() {
+        Acknowledgment ack = mock(Acknowledgment.class);
 
-        for (int i = 0; i < 60; i++) writer.flush();
+        // 505건 넣으면 500건은 enqueue, 5건은 nak
+        IntStream.rangeClosed(1, 505).forEach(i -> writer.accept(sampleLog("u" + i), ack));
 
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<ApiLog>> captor = ArgumentCaptor.forClass(List.class);
-        verify(mapper, org.mockito.Mockito.atLeastOnce()).insertApiLogBulk(captor.capture());
+        verify(ack, times(5)).nak();
+        verify(ack, never()).ack();
+    }
 
-        int totalInserted = captor.getAllValues().stream().mapToInt(List::size).sum();
-        assertThat(totalInserted).isEqualTo(500);
+    @Test
+    @DisplayName("flush 성공 시 batch 내 모든 ack 호출")
+    void flush_success_acksAll() {
+        Acknowledgment a1 = mock(Acknowledgment.class);
+        Acknowledgment a2 = mock(Acknowledgment.class);
+        writer.accept(sampleLog("u1"), a1);
+        writer.accept(sampleLog("u2"), a2);
+
+        writer.flush();
+
+        verify(a1).ack();
+        verify(a2).ack();
+        verify(a1, never()).nak();
+        verify(a2, never()).nak();
+    }
+
+    @Test
+    @DisplayName("flush 실패(DB 장애) 시 batch 내 모든 nak 호출")
+    void flush_failure_naksAll() {
+        Acknowledgment a1 = mock(Acknowledgment.class);
+        Acknowledgment a2 = mock(Acknowledgment.class);
+        writer.accept(sampleLog("u1"), a1);
+        writer.accept(sampleLog("u2"), a2);
+        doThrow(new RuntimeException("db down")).when(mapper).insertApiLogBulk(org.mockito.ArgumentMatchers.anyList());
+
+        writer.flush();
+
+        verify(a1).nak();
+        verify(a2).nak();
+        verify(a1, never()).ack();
+        verify(a2, never()).ack();
     }
 
     private ApiLog sampleLog(String userId) {
