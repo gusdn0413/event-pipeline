@@ -1,0 +1,27 @@
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb
+    driver-class-name: org.h2.Driver
+  sql:
+    init:
+      mode: never
+
+mybatis:
+  mapper-locations: classpath:mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+nats:
+  url: nats://localhost:4222
+  subject: events.api.call.test
+
+# 통합테스트는 publish 스케줄을 끄고 컨텍스트 로드만 검증
+event:
+  generator:
+    enabled: false
+    interval-ms: 500
+    weights:
+      success: 70
+      client-error: 15
+      server-error: 5
+      slow: 10
