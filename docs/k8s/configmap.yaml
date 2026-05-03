@@ -1,0 +1,12 @@
+# 앱이 참조할 환경 설정값을 모아둔 ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: event-pipeline-config
+
+data:
+  NATS_URL: "nats://nats-service:4222"
+  SPRING_DATASOURCE_URL: "jdbc:postgresql://postgres-service:5432/eventdb"
+  SPRING_DATASOURCE_USERNAME: "postgres"
+  MESSAGING_BROKER: "nats"
+  TZ: "Asia/Seoul"

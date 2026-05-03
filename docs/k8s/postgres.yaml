@@ -1,0 +1,68 @@
+# PostgreSQL (TimescaleDB)
+# 데이터 영속성 필요 → StatefulSet 사용
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+spec:
+  # Headless — StatefulSet의 Pod별 DNS 부여
+  clusterIP: None
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+spec:
+  serviceName: postgres-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+    spec:
+      containers:
+        - name: postgres
+          image: timescale/timescaledb:latest-pg16
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              value: "postgres"
+            - name: POSTGRES_DB
+              value: "eventdb"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: event-pipeline-secret    # 2번에서 만든 Secret
+                  key: POSTGRES_PASSWORD
+            - name: TZ
+              value: "Asia/Seoul"
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+          # readiness: pg_isready로 쿼리 가능 상태인지 확인
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres", "-d", "eventdb"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+  # 각 Pod별로 자동 생성되는 PVC 템플릿
+  # Pod가 재시작돼도 같은 PVC에 다시 연결됨 -> 데이터 유지
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        # 한 노드에서 한 Pod만 마운트
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi

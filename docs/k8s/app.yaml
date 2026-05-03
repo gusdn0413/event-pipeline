@@ -1,0 +1,74 @@
+# 이벤트 생성기 앱 (Spring Boot)
+# stateless 워크로드 → Deployment 사용
+# replicas 3으로 수평 확장 + 무중단 배포
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-service
+spec:
+  type: ClusterIP                       # 클러스터 내부에서만 접근 (기본값)
+  selector:
+    app: event-pipeline
+  ports:
+    - port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: event-pipeline
+spec:
+  replicas: 3                           # 3개 Pod로 수평 확장
+  selector:
+    matchLabels:
+      app: event-pipeline
+  # 무중단 배포 전략
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0                 # 교체 중에도 가용 Pod 수 유지
+      maxSurge: 1                       # 새 Pod 1개씩 추가하며 교체
+  template:
+    metadata:
+      labels:
+        app: event-pipeline             # selector가 찾을 라벨
+    spec:
+      containers:
+        - name: app
+          image: event-pipeline:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          # ConfigMap의 모든 키를 환경변수로 통째 주입
+          envFrom:
+            - configMapRef:
+                name: event-pipeline-config
+          # Secret은 키 하나만 명시적으로 골라서 주입 (민감 정보)
+          env:
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: event-pipeline-secret
+                  key: POSTGRES_PASSWORD
+          # 트래픽 받을 준비 됐는지 (DB·NATS 연결 포함)
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 20     # Spring Boot 시작 시간 고려
+            periodSeconds: 5
+          # 살아있는지 (죽으면 K8s가 자동 재시작)
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: "200m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
