@@ -23,6 +23,15 @@ messaging:
 nats:
   url: nats://localhost:4222
   subject: events.api.call
+  jetstream:
+    stream: EVENTS
+    consumer: api-log-consumer
+    # 30일 보관은 TimescaleDB 책임. NATS는 DB 일시 장애 흡수용 짧은 버퍼만 유지
+    max-age-seconds: 3600
+    # bulk flush(1초) + DB write 여유 + 재시도 마진
+    ack-wait-seconds: 30
+    # poison message 무한 재배달 방지
+    max-deliver: 5
 
 event:
   generator:
