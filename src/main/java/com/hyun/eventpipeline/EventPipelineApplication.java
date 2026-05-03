@@ -1,14 +1,12 @@
 package com.hyun.eventpipeline;
 
-import com.hyun.eventpipeline.provider.config.EventProperties;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
+// @EnableAsync는 spring-event 모드의 @EventListener @Async 동작을 위해 활성화 (NATS 모드에선 미사용)
 @SpringBootApplication
-@EnableConfigurationProperties(EventProperties.class)
 @EnableScheduling
 @EnableAsync
 public class EventPipelineApplication {

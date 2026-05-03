@@ -1,8 +1,8 @@
 package com.hyun.eventpipeline.provider.simulator;
 
-import com.hyun.eventpipeline.provider.model.ApiCallMessageEvent;
-import com.hyun.eventpipeline.provider.config.EventProperties;
-import com.hyun.eventpipeline.provider.config.EventProperties.Weights;
+import com.hyun.eventpipeline.provider.publisher.MessagePublisher;
+import com.hyun.eventpipeline.provider.config.EventConfig;
+import com.hyun.eventpipeline.provider.config.EventConfig.Weights;
 import com.hyun.eventpipeline.provider.model.ApiCall;
 import com.hyun.eventpipeline.provider.model.CallResult;
 import com.hyun.eventpipeline.provider.model.Product;
@@ -11,7 +11,6 @@ import io.github.resilience4j.circuitbreaker.CircuitBreaker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
@@ -47,9 +46,9 @@ public class ApiCallSimulator {
     private static final List<Integer> CLIENT_STATUS = List.of(400, 401, 403);
     private static final List<Integer> SERVER_STATUS = List.of(500, 500, 502, 503);
 
-    private final EventProperties eventProperties;
+    private final EventConfig eventConfig;
     private final ObjectMapper objectMapper;
-    private final ApplicationEventPublisher eventPublisher;
+    private final MessagePublisher messagePublisher;
     private final CircuitBreaker brokerCircuitBreaker;
 
     // API 호출 시뮬레이터 : 매 호출마다 50~1000ms 랜덤 대기 후 메시지 발행
@@ -68,11 +67,10 @@ public class ApiCallSimulator {
 
             String message = buildMessage(apiCall, userId, statusCode, errorCode, responseTime, LocalDateTime.now());
 
-            // 메시지 브로커 발행 (실제로는 NATS/Kafka 등 메세지 브로커로 교체)
+            // 메시지 브로커로 발행 (NATS / Spring Event 중 활성화된 구현체)
             // Circuit Breaker로 감싸 브로커 장애 감지 시 일정 시간 OPEN 시켜 호출 차단
             try {
-                brokerCircuitBreaker.executeRunnable(() ->
-                        eventPublisher.publishEvent(new ApiCallMessageEvent(message)));
+                brokerCircuitBreaker.executeRunnable(() -> messagePublisher.publish(message));
                 log.info("[{}] published: {}", apiCall.getDescription(), message);
             } catch (CallNotPermittedException e) {
                 log.warn("[{}] dropped — circuit OPEN", apiCall.getDescription());
@@ -142,7 +140,7 @@ public class ApiCallSimulator {
      * 균등한 확률의 랜덤을 안 쓰는 이유는 실제 트래픽 분포가 성공에 치우쳐 있어서 — 비율을 yml에서 튜닝 가능하게 분리.
      */
     private CallResult selectCallResult() {
-        Weights w = eventProperties.getWeights();
+        Weights w = eventConfig.getWeights();
         int total = w.getSuccess() + w.getClientError() + w.getServerError() + w.getSlow();
         int roll = ThreadLocalRandom.current().nextInt(total);
         if (roll < w.getSuccess()) return CallResult.SUCCESS;
